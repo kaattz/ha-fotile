@@ -18,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 # 真实方太 API 服务器 (直接使用 IP 避免 DNS 劫持回环)
 UPSTREAM_HOST = "api.fotile.com"
 UPSTREAM_IP = "101.37.40.179"
-UPSTREAM_SCHEME = "https"
+UPSTREAM_SCHEME = "http"
 UPSTREAM_TIMEOUT = ClientTimeout(total=15, connect=5)
 
 
