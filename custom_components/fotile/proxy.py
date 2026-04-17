@@ -15,10 +15,6 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# 真实方太 API 服务器 (直接使用 IP 避免 DNS 劫持回环)
-UPSTREAM_HOST = "api.fotile.com"
-UPSTREAM_IP = "101.37.40.179"
-UPSTREAM_SCHEME = "http"
 UPSTREAM_TIMEOUT = ClientTimeout(total=15, connect=5)
 
 
@@ -31,12 +27,16 @@ class FotileProxy:
         device_id: str,
         port: int = 80,
         device_mqtt_host: str | None = None,
+        upstream_host: str = "api.fotile.com",
+        upstream_ip: str = "101.37.40.179",
     ) -> None:
         self._mqtt_host = mqtt_host
         # 返回给设备的 MQTT 地址 (可以是 EMQX 等允许匿名的 broker)
         self._device_mqtt_host = device_mqtt_host or mqtt_host
         self._device_id = device_id
         self._port = port
+        self._upstream_host = upstream_host
+        self._upstream_ip = upstream_ip
         self._app = web.Application()
         self._runner: web.AppRunner | None = None
         self._session: ClientSession | None = None
@@ -55,14 +55,14 @@ class FotileProxy:
         body = await request.read()
 
         # 构造上游 URL — 使用真实 IP 避免 DNS 回环
-        upstream_url = f"{UPSTREAM_SCHEME}://{UPSTREAM_IP}{path}"
+        upstream_url = f"http://{self._upstream_ip}{path}"
 
         # 复制请求头，修正 Host
         headers = {}
         for key, value in request.headers.items():
             lower = key.lower()
             if lower in ("host",):
-                headers[key] = UPSTREAM_HOST
+                headers[key] = self._upstream_host
             elif lower in ("transfer-encoding", "content-length"):
                 continue  # 让 aiohttp 自动处理
             else:

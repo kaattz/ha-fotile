@@ -11,10 +11,16 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 
 from .const import (
     CONF_DEVICE_ID,
+    CONF_DEVICE_MQTT_HOST,
     CONF_DEVICE_SERIAL,
     CONF_MQTT_HOST,
     CONF_PROXY_PORT,
+    CONF_UPSTREAM_HOST,
+    CONF_UPSTREAM_IP,
+    DEFAULT_DEVICE_MQTT_HOST,
     DEFAULT_PROXY_PORT,
+    DEFAULT_UPSTREAM_HOST,
+    DEFAULT_UPSTREAM_IP,
     DOMAIN,
 )
 
@@ -26,6 +32,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_DEVICE_SERIAL): str,
         vol.Required(CONF_MQTT_HOST): str,
         vol.Optional(CONF_PROXY_PORT, default=DEFAULT_PROXY_PORT): int,
+        vol.Optional(CONF_DEVICE_MQTT_HOST, default=DEFAULT_DEVICE_MQTT_HOST): str,
+        vol.Optional(CONF_UPSTREAM_HOST, default=DEFAULT_UPSTREAM_HOST): str,
+        vol.Optional(CONF_UPSTREAM_IP, default=DEFAULT_UPSTREAM_IP): str,
     }
 )
 
@@ -34,10 +43,13 @@ class FotileConfigFlow(ConfigFlow, domain=DOMAIN):
     """方太油烟机配置流程.
 
     收集信息:
-    - device_id:     设备标识 (32位hex, 来自抓包的 topic 路径)
-    - device_serial: 设备序列号 (来自抓包的 topic 后缀)
-    - mqtt_host:     MQTT Broker 局域网 IP (油烟机将连到此地址)
-    - proxy_port:    HTTP 伪装服务器端口 (默认 80)
+    - device_id:        设备标识 (32位hex, 来自抓包的 topic 路径)
+    - device_serial:    设备序列号 (来自抓包的 topic 后缀)
+    - mqtt_host:        MQTT Broker 局域网 IP (HA Mosquitto 地址)
+    - proxy_port:       HTTP 伪装服务器端口 (默认 80)
+    - device_mqtt_host: 设备端 MQTT Broker (如 EMQX, 允许匿名; 空=同 mqtt_host)
+    - upstream_host:    上游 API 域名 (默认 api.fotile.com)
+    - upstream_ip:      上游 API 真实 IP (绕过 DNS 回环)
     """
 
     VERSION = 1
@@ -77,6 +89,9 @@ class FotileConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_DEVICE_SERIAL: user_input[CONF_DEVICE_SERIAL].strip(),
                         CONF_MQTT_HOST: mqtt_host,
                         CONF_PROXY_PORT: port,
+                        CONF_DEVICE_MQTT_HOST: user_input.get(CONF_DEVICE_MQTT_HOST, "").strip(),
+                        CONF_UPSTREAM_HOST: user_input.get(CONF_UPSTREAM_HOST, DEFAULT_UPSTREAM_HOST).strip(),
+                        CONF_UPSTREAM_IP: user_input.get(CONF_UPSTREAM_IP, DEFAULT_UPSTREAM_IP).strip(),
                     },
                 )
 
@@ -85,3 +100,4 @@ class FotileConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
         )
+

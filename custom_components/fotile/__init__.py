@@ -15,10 +15,15 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DEVICE_ID,
+    CONF_DEVICE_MQTT_HOST,
     CONF_DEVICE_SERIAL,
     CONF_MQTT_HOST,
     CONF_PROXY_PORT,
+    CONF_UPSTREAM_HOST,
+    CONF_UPSTREAM_IP,
     DEFAULT_DEVICE_NAME,
+    DEFAULT_UPSTREAM_HOST,
+    DEFAULT_UPSTREAM_IP,
     DOMAIN,
     PLATFORMS,
 )
@@ -34,13 +39,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_serial = entry.data[CONF_DEVICE_SERIAL]
     mqtt_host = entry.data[CONF_MQTT_HOST]
     proxy_port = entry.data[CONF_PROXY_PORT]
+    device_mqtt_host = entry.data.get(CONF_DEVICE_MQTT_HOST, "") or None
+    upstream_host = entry.data.get(CONF_UPSTREAM_HOST, DEFAULT_UPSTREAM_HOST)
+    upstream_ip = entry.data.get(CONF_UPSTREAM_IP, DEFAULT_UPSTREAM_IP)
 
     # 1. 启动 HTTP 伪装服务器
     proxy = FotileProxy(
         mqtt_host=mqtt_host,
         device_id=device_id,
         port=proxy_port,
-        device_mqtt_host="192.168.166.50",  # EMQX (允许匿名连接)
+        device_mqtt_host=device_mqtt_host,
+        upstream_host=upstream_host,
+        upstream_ip=upstream_ip,
     )
     await proxy.async_start()
 
@@ -64,10 +74,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _LOGGER.info(
-        "Fotile 集成已启动: device_id=%s, proxy_port=%s, mqtt=%s",
+        "Fotile 集成已启动: device_id=%s, proxy_port=%s, mqtt=%s, device_mqtt=%s",
         device_id,
         proxy_port,
         mqtt_host,
+        device_mqtt_host or mqtt_host,
     )
     return True
 

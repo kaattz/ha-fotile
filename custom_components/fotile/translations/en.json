@@ -8,7 +8,10 @@
           "device_id": "Device ID (32-char hex)",
           "device_serial": "Device Serial Number",
           "mqtt_host": "MQTT Broker LAN IP",
-          "proxy_port": "HTTP Proxy Server Port"
+          "proxy_port": "HTTP Proxy Server Port",
+          "device_mqtt_host": "Device MQTT Broker (empty=same as above)",
+          "upstream_host": "Upstream API Domain",
+          "upstream_ip": "Upstream API Real IP"
         }
       }
     },
