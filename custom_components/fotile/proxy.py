@@ -15,8 +15,9 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# 真实方太 API 服务器
+# 真实方太 API 服务器 (直接使用 IP 避免 DNS 劫持回环)
 UPSTREAM_HOST = "api.fotile.com"
+UPSTREAM_IP = "101.37.40.179"
 UPSTREAM_SCHEME = "https"
 UPSTREAM_TIMEOUT = ClientTimeout(total=15, connect=5)
 
@@ -50,8 +51,8 @@ class FotileProxy:
         # 读取请求体
         body = await request.read()
 
-        # 构造上游 URL — 使用上游 IP 避免 DNS 递归
-        upstream_url = f"{UPSTREAM_SCHEME}://{UPSTREAM_HOST}{path}"
+        # 构造上游 URL — 使用真实 IP 避免 DNS 回环
+        upstream_url = f"{UPSTREAM_SCHEME}://{UPSTREAM_IP}{path}"
 
         # 复制请求头，修正 Host
         headers = {}
