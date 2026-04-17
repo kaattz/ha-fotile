@@ -79,9 +79,17 @@ class FotileProxy:
             ) as upstream_resp:
                 resp_body = await upstream_resp.read()
 
-                # 仅拦截 routeService: 替换 MQTT IP
+                # 拦截 routeService: 替换 MQTT IP
                 if path == "/iot-mqttManager/routeService" and method == "POST":
                     resp_body = self._rewrite_mqtt_ip(resp_body)
+
+                # 记录关键接口的响应体 (用于调试)
+                if "device/access" in path or "routeService" in path:
+                    _LOGGER.info(
+                        "关键接口响应: %s → %s",
+                        path,
+                        resp_body.decode("utf-8", errors="replace")[:500],
+                    )
 
                 # 复制上游响应头
                 resp_headers = {}
