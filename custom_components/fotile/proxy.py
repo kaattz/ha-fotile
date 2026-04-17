@@ -45,6 +45,10 @@ class FotileProxy:
             "/iot-mqttManager/routeService",
             self._handle_route_service,
         )
+        self._app.router.add_post(
+            "/v5/time_sync/{tail:.*}",
+            self._handle_time_sync,
+        )
         # 兜底: 其他请求返回 200
         self._app.router.add_route("*", "/{path:.*}", self._handle_fallback)
 
@@ -69,6 +73,22 @@ class FotileProxy:
             self._mqtt_host,
             self._device_id,
         )
+        return web.Response(
+            body=json.dumps(response_data),
+            content_type="application/json",
+        )
+
+    async def _handle_time_sync(self, request: web.Request) -> web.Response:
+        """处理时间同步请求 — 返回当前时间戳."""
+        import time
+
+        now = int(time.time())
+        response_data = {
+            "timestamp": now,
+            "code": 0,
+            "msg": "success",
+        }
+        _LOGGER.debug("time_sync → 返回时间戳: %s", now)
         return web.Response(
             body=json.dumps(response_data),
             content_type="application/json",
