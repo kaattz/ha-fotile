@@ -30,8 +30,11 @@ class FotileProxy:
         mqtt_host: str,
         device_id: str,
         port: int = 80,
+        device_mqtt_host: str | None = None,
     ) -> None:
         self._mqtt_host = mqtt_host
+        # 返回给设备的 MQTT 地址 (可以是 EMQX 等允许匿名的 broker)
+        self._device_mqtt_host = device_mqtt_host or mqtt_host
         self._device_id = device_id
         self._port = port
         self._app = web.Application()
@@ -134,11 +137,11 @@ class FotileProxy:
             data = json.loads(content.decode("utf-8"))
             if isinstance(data, list) and len(data) > 0 and "ip" in data[0]:
                 old_ip = data[0]["ip"]
-                data[0]["ip"] = self._mqtt_host
+                data[0]["ip"] = self._device_mqtt_host
                 _LOGGER.info(
                     "routeService → MQTT IP 改写: %s → %s",
                     old_ip,
-                    self._mqtt_host,
+                    self._device_mqtt_host,
                 )
             return json.dumps(data).encode("utf-8")
         except (json.JSONDecodeError, KeyError, IndexError, UnicodeDecodeError):
@@ -151,11 +154,11 @@ class FotileProxy:
             data = json.loads(content.decode("utf-8"))
             if isinstance(data, dict) and "data" in data and "mqttIp" in data["data"]:
                 old_ip = data["data"]["mqttIp"]
-                data["data"]["mqttIp"] = self._mqtt_host
+                data["data"]["mqttIp"] = self._device_mqtt_host
                 _LOGGER.info(
                     "device/access → mqttIp 改写: %s → %s",
                     old_ip,
-                    self._mqtt_host,
+                    self._device_mqtt_host,
                 )
             return json.dumps(data).encode("utf-8")
         except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
@@ -165,7 +168,7 @@ class FotileProxy:
         """降级: 直接返回本地 MQTT 信息."""
         response_data = [
             {
-                "ip": self._mqtt_host,
+                "ip": self._device_mqtt_host,
                 "topics": [self._device_id],
             }
         ]

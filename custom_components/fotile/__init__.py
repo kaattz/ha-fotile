@@ -40,6 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         mqtt_host=mqtt_host,
         device_id=device_id,
         port=proxy_port,
+        device_mqtt_host="192.168.166.50",  # EMQX (允许匿名连接)
     )
     await proxy.async_start()
 
