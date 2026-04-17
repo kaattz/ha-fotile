@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configure Fotile Range Hood",
+        "description": "Enter device information (from MQTT packet capture)",
+        "data": {
+          "device_id": "Device ID (32-char hex)",
+          "device_serial": "Device Serial Number",
+          "mqtt_host": "MQTT Broker LAN IP",
+          "proxy_port": "HTTP Proxy Server Port"
+        }
+      }
+    },
+    "error": {
+      "invalid_device_id": "Invalid device ID format (at least 16 chars)",
+      "invalid_mqtt_host": "MQTT host cannot be empty",
+      "invalid_port": "Port must be between 1 and 65535"
+    },
+    "abort": {
+      "already_configured": "This device is already configured"
+    }
+  },
+  "entity": {
+    "fan": {
+      "range_hood": {
+        "name": "Range Hood"
+      }
+    },
+    "light": {
+      "hood_light": {
+        "name": "Hood Light"
+      }
+    },
+    "cover": {
+      "hood_lift": {
+        "name": "Hood Lift"
+      }
+    },
+    "switch": {
+      "lift_lock": {
+        "name": "Lift Lock"
+      }
+    },
+    "button": {
+      "refresh_status": {
+        "name": "Refresh Status"
+      }
+    },
+    "number": {
+      "delay_timer": {
+        "name": "Delay Timer"
+      }
+    },
+    "sensor": {
+      "air_quality": {
+        "name": "Air Quality"
+      },
+      "running_time": {
+        "name": "Running Time"
+      },
+      "lift_position": {
+        "name": "Lift Position"
+      }
+    }
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "配置方太油烟机",
+        "description": "请填写设备信息 (从 MQTT 抓包中获取)",
+        "data": {
+          "device_id": "设备标识 (32位hex)",
+          "device_serial": "设备序列号",
+          "mqtt_host": "MQTT Broker 局域网 IP",
+          "proxy_port": "HTTP 伪装服务器端口"
+        }
+      }
+    },
+    "error": {
+      "invalid_device_id": "设备标识格式错误 (至少16位)",
+      "invalid_mqtt_host": "MQTT 地址不能为空",
+      "invalid_port": "端口号必须在 1-65535 之间"
+    },
+    "abort": {
+      "already_configured": "该设备已配置"
+    }
+  },
+  "entity": {
+    "fan": {
+      "range_hood": {
+        "name": "油烟机"
+      }
+    },
+    "light": {
+      "hood_light": {
+        "name": "照明灯"
+      }
+    },
+    "cover": {
+      "hood_lift": {
+        "name": "升降面板"
+      }
+    },
+    "switch": {
+      "lift_lock": {
+        "name": "升降锁定"
+      }
+    },
+    "button": {
+      "refresh_status": {
+        "name": "刷新状态"
+      }
+    },
+    "number": {
+      "delay_timer": {
+        "name": "延时关机"
+      }
+    },
+    "sensor": {
+      "air_quality": {
+        "name": "空气质量"
+      },
+      "running_time": {
+        "name": "累计运行时间"
+      },
+      "lift_position": {
+        "name": "升降位置"
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Fotile Smart Kitchen",
+  "render_readme": true,
+  "domains": ["fan", "light", "cover", "switch", "number", "sensor"],
+  "country": ["CN"],
+  "homeassistant": "2024.1.0"
+}
