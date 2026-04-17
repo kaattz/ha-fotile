@@ -47,6 +47,11 @@
         "name": "刷新状态"
       }
     },
+    "select": {
+      "fan_level": {
+        "name": "风量档位"
+      }
+    },
     "number": {
       "delay_timer": {
         "name": "延时关机"

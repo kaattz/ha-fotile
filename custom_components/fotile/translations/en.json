@@ -47,6 +47,11 @@
         "name": "Refresh Status"
       }
     },
+    "select": {
+      "fan_level": {
+        "name": "Fan Level"
+      }
+    },
     "number": {
       "delay_timer": {
         "name": "Delay Timer"

@@ -23,7 +23,7 @@ TOPIC_REPLY = "reply/{device_id}/#"
 MQTT_QOS = 1
 
 # Entity 平台列表
-PLATFORMS: list[str] = ["fan", "light", "cover", "switch", "number", "sensor", "button"]
+PLATFORMS: list[str] = ["fan", "light", "cover", "switch", "select", "number", "sensor", "button"]
 
 # ── 设备属性键名 (MQTT Payload JSON keys) ────────────────────────
 KEY_POWER = "PowerSwitchAll"
