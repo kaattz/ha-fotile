@@ -51,7 +51,11 @@ class FotileFan(FotileEntity, FanEntity):
     """油烟机风速控制实体."""
 
     _attr_translation_key = "range_hood"
-    _attr_supported_features = FanEntityFeature.PRESET_MODE
+    _attr_supported_features = (
+        FanEntityFeature.PRESET_MODE
+        | FanEntityFeature.TURN_ON
+        | FanEntityFeature.TURN_OFF
+    )
     _attr_preset_modes = [PRESET_MODE_LOW, PRESET_MODE_HIGH, PRESET_MODE_AUTO]
     _attr_speed_count = 2  # 弱风 / 强风
 
