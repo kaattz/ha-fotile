@@ -84,6 +84,10 @@ class FotileProxy:
                 if path == "/iot-mqttManager/routeService" and method == "POST":
                     resp_body = self._rewrite_mqtt_ip(resp_body)
 
+                # 拦截 device/access: 替换 mqttIp 字段
+                if "device/access" in path and method == "POST":
+                    resp_body = self._rewrite_device_access_ip(resp_body)
+
                 # 记录关键接口的响应体 (用于调试)
                 if "device/access" in path or "routeService" in path:
                     _LOGGER.info(
@@ -139,6 +143,22 @@ class FotileProxy:
             return json.dumps(data).encode("utf-8")
         except (json.JSONDecodeError, KeyError, IndexError, UnicodeDecodeError):
             _LOGGER.warning("routeService 响应解析失败，返回原始内容")
+            return content
+
+    def _rewrite_device_access_ip(self, content: bytes) -> bytes:
+        """改写 device/access 响应中的 mqttIp."""
+        try:
+            data = json.loads(content.decode("utf-8"))
+            if isinstance(data, dict) and "data" in data and "mqttIp" in data["data"]:
+                old_ip = data["data"]["mqttIp"]
+                data["data"]["mqttIp"] = self._mqtt_host
+                _LOGGER.info(
+                    "device/access → mqttIp 改写: %s → %s",
+                    old_ip,
+                    self._mqtt_host,
+                )
+            return json.dumps(data).encode("utf-8")
+        except (json.JSONDecodeError, KeyError, UnicodeDecodeError):
             return content
 
     def _fallback_route_service(self) -> web.Response:
