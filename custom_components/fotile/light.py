@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import LightEntity
+from homeassistant.components.light import ColorMode, LightEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -39,6 +39,8 @@ class FotileLight(FotileEntity, LightEntity):
     """油烟机照明灯实体."""
 
     _attr_translation_key = "hood_light"
+    _attr_color_mode = ColorMode.ONOFF
+    _attr_supported_color_modes = {ColorMode.ONOFF}
 
     def __init__(self, device: FotileDevice) -> None:
         super().__init__(device)
