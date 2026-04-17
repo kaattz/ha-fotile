@@ -89,11 +89,11 @@ class FotileProxy:
                     resp_body = self._rewrite_device_access_ip(resp_body)
 
                 # 记录关键接口的响应体 (用于调试)
-                if "device/access" in path or "routeService" in path:
+                if any(k in path for k in ("device/access", "routeService", "device_login", "new_device_login")):
                     _LOGGER.info(
                         "关键接口响应: %s → %s",
                         path,
-                        resp_body.decode("utf-8", errors="replace")[:500],
+                        resp_body.decode("utf-8", errors="replace")[:800],
                     )
 
                 # 复制上游响应头
