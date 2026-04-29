@@ -72,13 +72,22 @@ def load_config_flow_module():
     components_module = types.ModuleType("homeassistant.components")
     components_module.network = network_module
 
+    core_module = types.ModuleType("homeassistant.core")
+
+    def callback(func):
+        return func
+
+    core_module.callback = callback
+
     homeassistant_module = types.ModuleType("homeassistant")
     homeassistant_module.config_entries = config_entries_module
     homeassistant_module.components = components_module
+    homeassistant_module.core = core_module
     sys.modules["homeassistant"] = homeassistant_module
     sys.modules["homeassistant.components"] = components_module
     sys.modules["homeassistant.components.network"] = network_module
     sys.modules["homeassistant.config_entries"] = config_entries_module
+    sys.modules["homeassistant.core"] = core_module
 
     class Marker:
         def __init__(self, schema: str, default: Any = None) -> None:
@@ -141,7 +150,10 @@ def test_initial_step_offers_auto_discovery_or_manual_entry() -> None:
     result = asyncio.run(flow.async_step_user())
 
     assert result["type"] == "menu"
-    assert result["menu_options"] == ["discover", "manual"]
+    assert result["menu_options"] == {
+        "discover": "自动获取设备信息",
+        "manual": "手动填写设备信息",
+    }
 
 
 def test_manual_config_form_includes_network_and_device_fields() -> None:
@@ -261,3 +273,21 @@ def test_auto_discovery_success_returns_manual_form_with_captured_defaults() -> 
     assert proxy.stopped
     assert defaults["device_id"] == "9d956a565f4727625e2f43ab6e0814b7"
     assert defaults["device_serial"] == "1147191980"
+
+
+def test_remove_flow_stops_discovery_proxy() -> None:
+    module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
+    flow.hass = FakeHass()
+    proxy = FakeDiscoveryProxy()
+    module.FotileProxy = lambda **kwargs: proxy
+
+    async def run_flow() -> None:
+        await flow.async_step_discover()
+        flow.async_remove()
+        await asyncio.sleep(0)
+
+    asyncio.run(run_flow())
+
+    assert proxy.started
+    assert proxy.stopped

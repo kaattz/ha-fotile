@@ -10,6 +10,7 @@ import voluptuous as vol
 
 from homeassistant.components import network
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.core import callback
 
 from .const import (
     CONF_DEVICE_ID,
@@ -76,8 +77,17 @@ class FotileConfigFlow(ConfigFlow, domain=DOMAIN):
         """入口步骤：选择自动获取或手动填写."""
         return self.async_show_menu(
             step_id="user",
-            menu_options=["discover", "manual"],
+            menu_options={
+                "discover": "自动获取设备信息",
+                "manual": "手动填写设备信息",
+            },
         )
+
+    @callback
+    def async_remove(self) -> None:
+        """配置流关闭时释放临时本地云端口."""
+        if self._discovery_proxy is not None:
+            self.hass.async_create_task(self._async_stop_discovery_proxy())
 
     async def async_step_manual(
         self,
