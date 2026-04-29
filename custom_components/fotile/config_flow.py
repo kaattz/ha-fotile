@@ -173,11 +173,14 @@ class FotileConfigFlow(ConfigFlow, domain=DOMAIN):
             await asyncio.wait_for(self._discovery_event.wait(), DISCOVERY_TIMEOUT)
         except TimeoutError:
             self._discovery_error = "discovery_timeout"
+            await self._async_stop_discovery_proxy()
         except OSError as exc:
             _LOGGER.warning("方太本地最小云启动失败: %s", exc)
             self._discovery_error = "cannot_start_discovery"
-        finally:
             await self._async_stop_discovery_proxy()
+        except asyncio.CancelledError:
+            await self._async_stop_discovery_proxy()
+            raise
 
     async def _async_stop_discovery_proxy(self) -> None:
         """停止临时发现用本地云."""

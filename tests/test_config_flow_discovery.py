@@ -20,6 +20,18 @@ class DoneTask:
         return None
 
 
+class FakeDiscoveryProxy:
+    def __init__(self) -> None:
+        self.started = False
+        self.stopped = False
+
+    async def async_start(self) -> None:
+        self.started = True
+
+    async def async_stop(self) -> None:
+        self.stopped = True
+
+
 class FakeHass:
     def async_create_task(self, coro):
         return coro
@@ -187,3 +199,34 @@ def test_discovery_finish_creates_entry_with_captured_ids() -> None:
         "mqtt_port": 1883,
         "proxy_port": 80,
     }
+
+
+def test_successful_discovery_keeps_proxy_until_finish_step() -> None:
+    module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
+    flow._base_data = {
+        "mqtt_host": "192.168.166.68",
+        "mqtt_port": 1883,
+        "proxy_port": 80,
+    }
+    proxy = FakeDiscoveryProxy()
+    module.FotileProxy = lambda **kwargs: proxy
+
+    async def run_discovery() -> None:
+        task = asyncio.create_task(flow._async_discover_device())
+        await asyncio.sleep(0)
+        flow._handle_device_info(
+            {
+                "device_id": "9d956a565f4727625e2f43ab6e0814b7",
+                "device_serial": "1147191980",
+            }
+        )
+        await task
+
+    import asyncio
+
+    asyncio.run(run_discovery())
+
+    assert proxy.started
+    assert not proxy.stopped
+    assert flow._discovery_proxy is proxy
