@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -13,6 +14,18 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class FakeHass:
+    def __init__(self) -> None:
+        self.tasks = []
+
+    def async_create_task(self, coro):
+        import asyncio
+
+        task = asyncio.create_task(coro)
+        self.tasks.append(task)
+        return task
 
 
 def load_coordinator_class() -> type:
@@ -94,3 +107,81 @@ async def test_query_all_status_publishes_null_command_to_control_topic() -> Non
         )
     ]
     assert json.loads(published[0][1]) == {"updateAllStatus": None}
+
+
+@pytest.mark.asyncio
+async def test_setup_retries_initial_status_queries_until_state_arrives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device_class = load_coordinator_class()
+    coordinator_module = sys.modules["custom_components.fotile.coordinator"]
+    import homeassistant.components.mqtt as mqtt
+
+    sleeps: list[int] = []
+    published: list[tuple[str, str, int]] = []
+
+    async def fast_sleep(delay: int) -> None:
+        sleeps.append(delay)
+
+    async def capture_publish(hass: Any, topic: str, payload: str, qos: int) -> None:
+        published.append((topic, payload, qos))
+
+    monkeypatch.setattr(coordinator_module, "sleep", fast_sleep)
+    mqtt.async_publish = capture_publish
+
+    hass = FakeHass()
+    device = device_class(
+        hass=hass,
+        device_id="9d956a565f4727625e2f43ab6e0814b7",
+        device_serial="1147191980",
+        device_name="方太油烟机",
+    )
+
+    await device.async_setup()
+    assert hass.tasks
+    await hass.tasks[0]
+
+    assert sleeps == [5, 10, 15]
+    assert [topic for topic, _payload, _qos in published] == [
+        "control/9d956a565f4727625e2f43ab6e0814b7/1147191980",
+        "control/9d956a565f4727625e2f43ab6e0814b7/1147191980",
+        "control/9d956a565f4727625e2f43ab6e0814b7/1147191980",
+        "control/9d956a565f4727625e2f43ab6e0814b7/1147191980",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_teardown_cancels_initial_status_retry_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    device_class = load_coordinator_class()
+    coordinator_module = sys.modules["custom_components.fotile.coordinator"]
+
+    sleep_started = False
+
+    async def blocked_sleep(delay: int) -> None:
+        nonlocal sleep_started
+        sleep_started = True
+        import asyncio
+
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(coordinator_module, "sleep", blocked_sleep)
+
+    hass = FakeHass()
+    device = device_class(
+        hass=hass,
+        device_id="9d956a565f4727625e2f43ab6e0814b7",
+        device_serial="1147191980",
+        device_name="方太油烟机",
+    )
+
+    await device.async_setup()
+    assert hass.tasks
+    await asyncio.sleep(0)
+    assert sleep_started
+
+    await device.async_teardown()
+    await asyncio.sleep(0)
+
+    assert hass.tasks[0].cancelled()

@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from asyncio import sleep
+from contextlib import suppress
 from typing import Any, Callable
 
 from homeassistant.components import mqtt
@@ -19,6 +22,8 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+INITIAL_STATUS_QUERY_RETRY_SECONDS = (5, 15, 30)
 
 
 class FotileDevice:
@@ -52,6 +57,7 @@ class FotileDevice:
         # MQTT 取消订阅函数
         self._unsub_sync: Callable | None = None
         self._unsub_reply: Callable | None = None
+        self._initial_status_query_task: asyncio.Task | None = None
 
         # Topic 实例化
         self._topic_sync = TOPIC_SYNC.format(device_id=device_id)
@@ -82,11 +88,21 @@ class FotileDevice:
             self._topic_reply,
         )
 
-        # 启动后主动查询一次全部状态
+        # 启动后主动查询一次全部状态，再延迟重试，避免烟机刚上线未订阅时丢掉首次查询。
         await self.async_query_all_status()
+        self._initial_status_query_task = self.hass.async_create_task(
+            self._async_retry_initial_status_queries()
+        )
 
     async def async_teardown(self) -> None:
         """取消 MQTT 订阅."""
+        task = self._initial_status_query_task
+        self._initial_status_query_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
         if self._unsub_sync:
             self._unsub_sync()
             self._unsub_sync = None
@@ -94,6 +110,18 @@ class FotileDevice:
             self._unsub_reply()
             self._unsub_reply = None
         _LOGGER.info("MQTT 订阅已取消")
+
+    async def _async_retry_initial_status_queries(self) -> None:
+        """启动初期延迟重试查询状态，直到收到首条状态或重试结束."""
+        previous_delay = 0
+        for retry_at in INITIAL_STATUS_QUERY_RETRY_SECONDS:
+            if self.state:
+                return
+            await sleep(retry_at - previous_delay)
+            previous_delay = retry_at
+            if self.state:
+                return
+            await self.async_query_all_status()
 
     # ── MQTT 消息处理 ─────────────────────────────────────────────
 
@@ -112,6 +140,7 @@ class FotileDevice:
 
         _LOGGER.debug("sync 状态更新: %s", payload)
         self.state.update(payload)
+        self._cancel_initial_status_query_task()
         self._notify_listeners()
 
     @callback
@@ -128,7 +157,16 @@ class FotileDevice:
 
         _LOGGER.debug("reply 状态更新: %s", payload)
         self.state.update(payload)
+        self._cancel_initial_status_query_task()
         self._notify_listeners()
+
+    @callback
+    def _cancel_initial_status_query_task(self) -> None:
+        """收到状态后停止启动期重试任务."""
+        task = self._initial_status_query_task
+        self._initial_status_query_task = None
+        if task is not None and not task.done():
+            task.cancel()
 
     # ── 发送指令 ──────────────────────────────────────────────────
 
