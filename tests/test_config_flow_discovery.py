@@ -201,6 +201,28 @@ def test_discovery_finish_creates_entry_with_captured_ids() -> None:
     }
 
 
+def test_discovery_step_creates_entry_when_task_is_done() -> None:
+    module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
+    flow._base_data = {
+        "mqtt_host": "192.168.166.68",
+        "mqtt_port": 1883,
+        "proxy_port": 80,
+    }
+    flow._discovered = {
+        "device_id": "9d956a565f4727625e2f43ab6e0814b7",
+        "device_serial": "1147191980",
+    }
+    flow._discovery_task = DoneTask()
+
+    import asyncio
+
+    result = asyncio.run(flow.async_step_discovery())
+
+    assert result["type"] == "create_entry"
+    assert result["data"]["device_id"] == "9d956a565f4727625e2f43ab6e0814b7"
+
+
 def test_successful_discovery_keeps_proxy_until_finish_step() -> None:
     module = load_config_flow_module()
     flow = module.FotileConfigFlow()

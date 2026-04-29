@@ -116,7 +116,7 @@ class FotileConfigFlow(ConfigFlow, domain=DOMAIN):
                 progress_task=self._discovery_task,
             )
 
-        return self.async_show_progress_done(next_step_id="finish")
+        return await self.async_step_finish()
 
     async def async_step_finish(
         self,

@@ -23,7 +23,7 @@
 1. **本地最小云** — 拦截油烟机对 `api.fotile.com` 的 HTTP 请求，在本地直接实现 `time_sync`、`new_device_login`、`routeService`、`tsl/query/product`
 2. **EMQX add-on 作为唯一 MQTT Broker** — 烟机需要匿名 MQTT，EMQX 更适合承接烟机连接
 3. **HA 直接连接 EMQX** — Home Assistant 的 MQTT 集成直接配置到 EMQX，不需要 Mosquitto Bridge
-4. **离线运行** — HA 控制烟机不再依赖方太官方 API；OpenWrt 只负责把 `api.fotile.com` 指到 HA
+4. **离线运行** — HA 控制烟机不再依赖方太官方 API；OpenWrt 负责 DNS 劫持和 HTTP DNAT，让烟机请求进入 HA
 
 不建议继续用 Mosquitto 作为主 Broker：烟机大概率无法通过 Mosquitto 的认证要求。若坚持使用 Mosquitto，就需要额外部署 EMQX 接收烟机匿名连接，再配置 Bridge 同步到 HA Mosquitto，链路更长，排障也更麻烦。
 
@@ -33,7 +33,7 @@
 |------|------|
 | Home Assistant | 2024.1+ (HAOS 推荐) |
 | EMQX add-on | 推荐的唯一 MQTT Broker，允许烟机匿名连接 |
-| OpenWrt 路由器 | 用于固定 DNS 劫持 `api.fotile.com` |
+| OpenWrt 路由器 | 用于固定 DNS 劫持 `api.fotile.com`，并把烟机 HTTP 80 转发到 HA |
 
 ## 安装
 
@@ -101,9 +101,11 @@ EMQX 默认允许匿名连接。管理后台：`http://<EMQX_IP>:18083` (admin/p
 
 如果 HA 上已有 Zigbee2MQTT，也要把 Zigbee2MQTT 的 MQTT 地址改到 EMQX。Zigbee 设备本身不用改。
 
-### 第四步：配置 OpenWrt DNS 劫持
+### 第四步：配置 OpenWrt DNS + DNAT
 
-在 OpenWrt 上把 `api.fotile.com` 固定解析到 HA。烟机会继续以为自己在访问官方域名，但实际访问的是 HA 本地最小云。
+在 OpenWrt 上把 `api.fotile.com` 固定解析到 HA，并把烟机访问的 TCP 80 强制转发到 HA。烟机会继续以为自己在访问官方域名，但实际访问的是 HA 本地最小云。
+
+只做 DNS 不一定够：烟机可能缓存了官方 IP，抓包会看到它直接访问 `101.37.40.179:80`。DNAT 可以覆盖这种情况，不需要维护官方 IP。
 
 在 OpenWrt 管理界面添加静态 DNS：
 
@@ -119,6 +121,51 @@ address=/api.fotile.com/<HA_IP>
 ```
 
 然后重启 dnsmasq，并断电重启烟机，让烟机重新解析域名。
+
+再添加烟机专用 HTTP DNAT。以下示例里：
+
+| 项 | 示例 |
+|----|------|
+| 烟机 IP | `192.168.166.200` |
+| HA IP | `192.168.166.68` |
+
+临时生效命令：
+
+```bash
+iptables -t nat -I PREROUTING 1 -i br-lan -s 192.168.166.200 -p tcp --dport 80 -j DNAT --to-destination 192.168.166.68:80
+iptables -t nat -I POSTROUTING 1 -s 192.168.166.200 -d 192.168.166.68 -p tcp --dport 80 -j MASQUERADE
+```
+
+确认规则命中：
+
+```bash
+iptables -t nat -L PREROUTING -n -v --line-numbers | grep 192.168.166.200
+iptables -t nat -L POSTROUTING -n -v --line-numbers | grep 192.168.166.68
+```
+
+持久化规则可以写入 OpenWrt 防火墙：
+
+```bash
+uci add firewall redirect
+uci set firewall.@redirect[-1].name='fotile_http_to_ha'
+uci set firewall.@redirect[-1].src='lan'
+uci set firewall.@redirect[-1].src_ip='192.168.166.200'
+uci set firewall.@redirect[-1].proto='tcp'
+uci set firewall.@redirect[-1].src_dport='80'
+uci set firewall.@redirect[-1].dest='lan'
+uci set firewall.@redirect[-1].dest_ip='192.168.166.68'
+uci set firewall.@redirect[-1].dest_port='80'
+uci set firewall.@redirect[-1].target='DNAT'
+uci commit firewall
+/etc/init.d/firewall restart
+```
+
+如果之前反复测试过，先清掉重复的手工规则：
+
+```bash
+while iptables -t nat -D PREROUTING -s 192.168.166.200 -p tcp --dport 80 -j DNAT --to-destination 192.168.166.68:80 2>/dev/null; do :; done
+while iptables -t nat -D POSTROUTING -s 192.168.166.200 -d 192.168.166.68 -p tcp --dport 80 -j MASQUERADE 2>/dev/null; do :; done
+```
 
 如果烟机和 EMQX 不在同一网段，才需要额外做 MQTT 路由或防火墙放行；正常同网段不需要 MQTT 劫持。
 
@@ -136,7 +183,7 @@ address=/api.fotile.com/<HA_IP>
 
 提交后保持页面打开，断电重启烟机。页面会显示等待发现；抓到 `deviceId` 和 `productId` 后会自动创建配置项。
 
-> 烟机访问的是固定的 `api.fotile.com:80`。如果只做 DNS 劫持，本地最小云必须监听 HA 主机的 80 端口，并且 HA 服务器上的 80 端口不能被其他服务占用。只有额外配置 OpenWrt DNAT，把烟机访问的 80 转发到 HA 的其他端口时，才可以把这里改成其他端口。
+> 烟机访问的是固定的 `api.fotile.com:80`。本地最小云默认必须监听 HA 主机的 80 端口，并且 HA 服务器上的 80 端口不能被其他服务占用。只有额外配置 OpenWrt DNAT，把烟机访问的 80 转发到 HA 的其他端口时，才可以把这里改成其他端口。
 
 ### 第六步：验证
 
@@ -181,8 +228,9 @@ sync 状态更新: {'PowerSwitchAll': 2, 'Light': 0, ...}
                     ┌─────────────────────────────────────────────────┐
                     │                  OpenWrt 路由器                   │
                     │                                                 │
-                    │  DNS 劫持:                                       │
-                    │    api.fotile.com → HA_IP                        │
+                    │  DNS + DNAT:                                    │
+                    │    api.fotile.com → HA_IP                       │
+                    │    烟机 tcp/80 → HA_IP:80                       │
                     └─────────────────────────────────────────────────┘
                               │              │              │
                ┌──────────────┤              │              ├──────────────┐
@@ -205,8 +253,8 @@ sync 状态更新: {'PowerSwitchAll': 2, 'Light': 0, ...}
 
 ### 油烟机未连接
 
-1. **检查 DNS 劫持**：HA 日志中是否有 `本地云请求: POST /v5/time_sync/`
-   - 没有 → 检查 OpenWrt 中 `api.fotile.com -> HA_IP` 是否生效，并断电重启烟机
+1. **检查 DNS 和 DNAT**：HA 日志中是否有 `本地云请求: POST /v5/time_sync/`
+   - 没有 → 检查 OpenWrt 中 `api.fotile.com -> HA_IP` 是否生效，并确认烟机 TCP 80 DNAT 规则有计数
 2. **检查 MQTT 连接**：EMQX add-on 管理后台是否有 `Fotile_DEV_*` 客户端
    - 没有 → 检查 routeService 返回的 IP 是否正确
 3. **检查 HA MQTT 集成**：Home Assistant 是否已经连接 EMQX
