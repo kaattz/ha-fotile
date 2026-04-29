@@ -21,3 +21,8 @@ Thumbs.db
 # HA dev
 .HA_VERSION
 home-assistant_v2.db
+
+# Local reverse engineering artifacts
+XingFuFamily.apk
+docs/fotile-app-reverse-engineering.md
+specs/

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any, Callable
 
 from homeassistant.components import mqtt
@@ -16,7 +15,6 @@ from homeassistant.core import HomeAssistant, callback
 from .const import (
     TOPIC_CONTROL,
     TOPIC_REPLY,
-    TOPIC_SERVICE,
     TOPIC_SYNC,
 )
 
@@ -30,7 +28,6 @@ class FotileDevice:
     - 订阅 sync/{device_id}/# 接收设备状态
     - 订阅 reply/{device_id}/# 接收服务应答
     - 发布 control/{device_id}/{serial} 下发控制指令
-    - 发布 service/{device_id}/{serial} 发起服务查询
     - 维护 state 字典供各实体读取
     """
 
@@ -59,9 +56,6 @@ class FotileDevice:
         # Topic 实例化
         self._topic_sync = TOPIC_SYNC.format(device_id=device_id)
         self._topic_control = TOPIC_CONTROL.format(
-            device_id=device_id, device_serial=device_serial
-        )
-        self._topic_service = TOPIC_SERVICE.format(
             device_id=device_id, device_serial=device_serial
         )
         self._topic_reply = TOPIC_REPLY.format(device_id=device_id)
@@ -155,11 +149,11 @@ class FotileDevice:
 
     async def async_query_all_status(self) -> None:
         """发送 updateAllStatus 查询, 刷新全部设备状态."""
-        payload = json.dumps({"updateAllStatus": "null"})
-        _LOGGER.info("查询全部状态: topic=%s", self._topic_service)
+        payload = json.dumps({"updateAllStatus": None})
+        _LOGGER.info("查询全部状态: topic=%s", self._topic_control)
         await mqtt.async_publish(
             self.hass,
-            self._topic_service,
+            self._topic_control,
             payload,
             qos=1,
         )

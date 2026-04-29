@@ -3,25 +3,25 @@
     "step": {
       "user": {
         "title": "Configure Fotile Range Hood",
-        "description": "Enter device information (from MQTT packet capture)",
+        "description": "Make sure OpenWrt resolves api.fotile.com to Home Assistant. After submitting, power-cycle the range hood and the integration will discover the device ID and serial number.",
         "data": {
-          "device_id": "Device ID (32-char hex)",
-          "device_serial": "Device Serial Number",
-          "mqtt_host": "MQTT Broker LAN IP",
-          "proxy_port": "HTTP Proxy Server Port",
-          "device_mqtt_host": "Device MQTT Broker (empty=same as above)",
-          "upstream_host": "Upstream API Domain",
-          "upstream_ip": "Upstream API Real IP"
+          "mqtt_host": "MQTT Broker LAN IP (defaults to HA host IP)",
+          "mqtt_port": "MQTT Broker Port",
+          "proxy_port": "Local Cloud HTTP Port"
         }
       }
     },
+    "progress": {
+      "discover_device": "Waiting for the range hood to request the local cloud. Power-cycle the range hood and keep this page open."
+    },
     "error": {
-      "invalid_device_id": "Invalid device ID format (at least 16 chars)",
       "invalid_mqtt_host": "MQTT host cannot be empty",
       "invalid_port": "Port must be between 1 and 65535"
     },
     "abort": {
-      "already_configured": "This device is already configured"
+      "already_configured": "This device is already configured",
+      "cannot_start_discovery": "Unable to start the local cloud. Check whether the port is already in use.",
+      "discovery_timeout": "No range hood was discovered. Check DNS hijacking and power-cycle the range hood."
     }
   },
   "entity": {

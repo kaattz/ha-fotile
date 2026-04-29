@@ -3,25 +3,25 @@
     "step": {
       "user": {
         "title": "配置方太油烟机",
-        "description": "请填写设备信息 (从 MQTT 抓包中获取)",
+        "description": "请先确认 OpenWrt 已将 api.fotile.com 固定解析到 Home Assistant。提交后断电重启烟机，集成会自动获取烟机身份信息。",
         "data": {
-          "device_id": "设备标识 (32位hex)",
-          "device_serial": "设备序列号",
-          "mqtt_host": "MQTT Broker 局域网 IP",
-          "proxy_port": "HTTP 伪装服务器端口",
-          "device_mqtt_host": "设备端 MQTT Broker (留空=同上)",
-          "upstream_host": "上游 API 域名",
-          "upstream_ip": "上游 API 真实 IP"
+          "mqtt_host": "MQTT Broker 局域网 IP（默认 HA 主机 IP）",
+          "mqtt_port": "MQTT Broker 端口",
+          "proxy_port": "本地最小云 HTTP 端口"
         }
       }
     },
+    "progress": {
+      "discover_device": "等待烟机请求本地云。请断电重启烟机，保持此页面打开。"
+    },
     "error": {
-      "invalid_device_id": "设备标识格式错误 (至少16位)",
       "invalid_mqtt_host": "MQTT 地址不能为空",
       "invalid_port": "端口号必须在 1-65535 之间"
     },
     "abort": {
-      "already_configured": "该设备已配置"
+      "already_configured": "该设备已配置",
+      "cannot_start_discovery": "无法启动本地最小云，请检查端口是否被占用",
+      "discovery_timeout": "未发现烟机，请检查 DNS 劫持后断电重启烟机"
     }
   },
   "entity": {

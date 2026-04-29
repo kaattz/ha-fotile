@@ -6,17 +6,13 @@ DOMAIN = "fotile"
 CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_SERIAL = "device_serial"
 CONF_MQTT_HOST = "mqtt_host"
+CONF_MQTT_PORT = "mqtt_port"
 CONF_PROXY_PORT = "proxy_port"
-CONF_DEVICE_MQTT_HOST = "device_mqtt_host"
-CONF_UPSTREAM_HOST = "upstream_host"
-CONF_UPSTREAM_IP = "upstream_ip"
 
 # ── 默认值 ────────────────────────────────────────────────────────
 DEFAULT_PROXY_PORT = 80
 DEFAULT_DEVICE_NAME = "方太油烟机"
-DEFAULT_DEVICE_MQTT_HOST = ""  # 空 = 与 mqtt_host 相同
-DEFAULT_UPSTREAM_HOST = "api.fotile.com"
-DEFAULT_UPSTREAM_IP = "101.37.40.179"
+DEFAULT_MQTT_PORT = 1883
 
 # ── MQTT Topic 模板 ───────────────────────────────────────────────
 # {device_id} = 32位hex产品标识, {device_serial} = 设备序列号

@@ -7,31 +7,33 @@
 ## 工作原理
 
 ```
-┌────────────┐   HTTP (port 80)    ┌──────────────────┐   HTTP    ┌──────────────────┐
-│  油烟机     │ ──────────────────► │  HA Proxy        │ ────────► │ api.fotile.com   │
-│ 192.168.x  │                     │  (透传+改写MQTT) │ ◄──────── │ 101.37.40.179    │
-└────────────┘                     └──────────────────┘           └──────────────────┘
+┌────────────┐   HTTP api.fotile.com:80   ┌────────────────────┐
+│  油烟机     │ ─────────────────────────► │ HA 本地最小云       │
+│ 192.168.x  │                            │ time/login/route/TSL│
+└────────────┘                            └────────────────────┘
       │                                                      
-      │  MQTT (port 1883)          ┌──────────────────┐   Bridge  ┌──────────────────┐
-      └───────────────────────────►│  EMQX            │ ────────► │  Mosquitto (HA)  │
-                                   │  (匿名连接)      │ ◄──────── │  (认证连接)       │
-                                   │  192.168.x.x     │           │  172.30.x.x      │
-                                   └──────────────────┘           └──────────────────┘
+      │  MQTT (port 1883)          ┌──────────────────┐
+      └───────────────────────────►│  EMQX add-on     │◄──────── Home Assistant MQTT 集成
+                                   │  允许烟机匿名连接 │
+                                   │  HA_IP:1883      │
+                                   └──────────────────┘
 ```
 
 **核心思路**：
-1. **HTTP 透传代理** — 拦截油烟机对 `api.fotile.com` 的 HTTP 请求，透传给真实服务器，仅将 `routeService` 和 `device/access` 接口返回的 MQTT 地址替换为本地 Broker
-2. **MQTT 匿名接入** — 油烟机不支持 MQTT 认证，需要一个允许匿名的 MQTT Broker（如 EMQX）作为中转
-3. **Bridge 转发** — Mosquitto Bridge 在 EMQX 和 HA Mosquitto 之间同步消息
+1. **本地最小云** — 拦截油烟机对 `api.fotile.com` 的 HTTP 请求，在本地直接实现 `time_sync`、`new_device_login`、`routeService`、`tsl/query/product`
+2. **EMQX add-on 作为唯一 MQTT Broker** — 烟机需要匿名 MQTT，EMQX 更适合承接烟机连接
+3. **HA 直接连接 EMQX** — Home Assistant 的 MQTT 集成直接配置到 EMQX，不需要 Mosquitto Bridge
+4. **离线运行** — HA 控制烟机不再依赖方太官方 API；OpenWrt 只负责把 `api.fotile.com` 指到 HA
+
+不建议继续用 Mosquitto 作为主 Broker：烟机大概率无法通过 Mosquitto 的认证要求。若坚持使用 Mosquitto，就需要额外部署 EMQX 接收烟机匿名连接，再配置 Bridge 同步到 HA Mosquitto，链路更长，排障也更麻烦。
 
 ## 前置条件
 
 | 组件 | 说明 |
 |------|------|
 | Home Assistant | 2024.1+ (HAOS 推荐) |
-| Mosquitto Add-on | HA 官方 MQTT Broker |
-| EMQX (可选) | 同局域网运行的 MQTT Broker，允许匿名连接 |
-| OpenWrt 路由器 | 用于 iptables 流量劫持（也可用其他支持 DNAT 的路由器） |
+| EMQX add-on | 推荐的唯一 MQTT Broker，允许烟机匿名连接 |
+| OpenWrt 路由器 | 用于固定 DNS 劫持 `api.fotile.com` |
 
 ## 安装
 
@@ -53,27 +55,30 @@ ha core restart
 
 ## 配置步骤
 
-### 第一步：获取设备信息
+### 第一步：准备自动发现
 
-你需要从 MQTT 抓包中获取以下信息：
+不需要手工填写设备标识和设备序列号。添加集成后，烟机断电重启时会主动请求本地最小云，集成会自动从这些请求里提取：
 
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `device_id` | 32位 hex 产品标识 | `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4` |
-| `device_serial` | 设备序列号 | `1234567890` |
+| 字段 | 自动来源 |
+|------|----------|
+| 设备序列号 | `/v2/new_device_login` 请求体里的 `deviceId` |
+| 设备标识 | `/v2/tsl/query/product` 请求体里的 `productId` |
 
-**获取方式**：用 MQTT Explorer 连接 EMQX，观察油烟机发布的 topic：
-```
-sync/a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4/1234567890
-      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^
-      device_id                        device_serial
-```
+### 第二步：配置 EMQX add-on
 
-### 第二步：配置 EMQX (匿名 MQTT Broker)
+推荐在 HAOS 上安装 **EMQX add-on**，并让它作为唯一 MQTT Broker。烟机连接 EMQX，Home Assistant 的 MQTT 集成也连接 EMQX。
 
-油烟机不支持 MQTT 认证，需要一个允许匿名的 Broker。
+原因很简单：烟机需要匿名 MQTT；Mosquitto 默认不适合直接给烟机匿名连接。如果继续用 Mosquitto，就要额外用 EMQX 接烟机，再 Bridge 到 Mosquitto，配置会明显复杂。
 
-**使用 Docker 快速部署 EMQX：**
+| 客户端 | Broker 地址 |
+|--------|-------------|
+| 烟机 | `<HA_IP>:1883` |
+| Home Assistant MQTT 集成 | EMQX add-on |
+| Zigbee2MQTT | EMQX add-on |
+
+HAOS 内部服务可以用 EMQX add-on 的内部地址；局域网设备用 HA 主机 IP。
+
+Docker 环境也可以用 EMQX 容器：
 
 ```bash
 docker run -d --name emqx \
@@ -84,62 +89,38 @@ docker run -d --name emqx \
 
 EMQX 默认允许匿名连接。管理后台：`http://<EMQX_IP>:18083` (admin/public)
 
-### 第三步：配置 Mosquitto Bridge
+### 第三步：配置 HA MQTT 集成连接 EMQX
 
-在 HA 的 Mosquitto Add-on 中启用自定义配置：
+在 Home Assistant 中打开 MQTT 集成，把 Broker 改成 EMQX。
 
-1. Add-on 配置中设置 `customize.active: true`
-2. 创建 `/share/mosquitto/bridge_emqx.conf`：
+| 场景 | Broker 填写 |
+|------|-------------|
+| HAOS + EMQX add-on | `a0d7b954-emqx` 或 `homeassistant` |
+| Docker / 外部 EMQX | EMQX 容器或主机 IP |
+| 局域网设备连接 EMQX | HA 主机 IP |
+
+如果 HA 上已有 Zigbee2MQTT，也要把 Zigbee2MQTT 的 MQTT 地址改到 EMQX。Zigbee 设备本身不用改。
+
+### 第四步：配置 OpenWrt DNS 劫持
+
+在 OpenWrt 上把 `api.fotile.com` 固定解析到 HA。烟机会继续以为自己在访问官方域名，但实际访问的是 HA 本地最小云。
+
+在 OpenWrt 管理界面添加静态 DNS：
+
+| 项 | 值 |
+|----|----|
+| 域名 | `api.fotile.com` |
+| 地址 | `<HA_IP>` |
+
+或者在 dnsmasq 自定义配置中加入：
 
 ```conf
-# Bridge: HA Mosquitto ←→ EMQX
-connection emqx_fotile
-address <EMQX_IP>:1883
-clientid mosqbridge_to_emqx
-
-cleansession true
-try_private false
-start_type automatic
-notifications false
-keepalive_interval 30
-bridge_protocol_version mqttv311
-
-# 替换为你的 device_id 和 device_serial
-# 设备上报 (EMQX → Mosquitto):
-topic sync/<device_id>/<device_serial> in 1
-topic reply/<device_id>/<device_serial> in 1
-topic CustomEvent/<device_serial> in 1
-
-# HA 下发 (Mosquitto → EMQX):
-topic service/<device_id>/<device_serial> out 1
-topic control/<device_id>/<device_serial> out 1
+address=/api.fotile.com/<HA_IP>
 ```
 
-重启 Mosquitto Add-on。
+然后重启 dnsmasq，并断电重启烟机，让烟机重新解析域名。
 
-### 第四步：配置 OpenWrt 流量劫持
-
-在 OpenWrt 路由器上添加 iptables 规则，将油烟机的 HTTP 和 MQTT 流量重定向到本地：
-
-```bash
-# 获取上游 API 真实 IP（可能会变，需确认）
-nslookup api.fotile.com
-# 假设为 101.37.40.179
-
-# === HTTP 劫持 (油烟机 → HA Proxy) ===
-iptables -t nat -A PREROUTING -s <油烟机IP> -p tcp --dport 80 -j DNAT --to-destination <HA_IP>:80
-iptables -t nat -A POSTROUTING -s <油烟机IP> -d <HA_IP> -p tcp --dport 80 -j MASQUERADE
-
-# === MQTT 劫持 (油烟机 → EMQX) ===
-# 仅在 EMQX 与油烟机不在同一子网时需要
-# 如果 EMQX 与油烟机在同一子网，proxy 会直接返回 EMQX IP，无需此规则
-iptables -t nat -A PREROUTING -s <油烟机IP> -p tcp --dport 1883 -j DNAT --to-destination <EMQX_IP>:1883
-iptables -t nat -A POSTROUTING -s <油烟机IP> -d <EMQX_IP> -p tcp --dport 1883 -j MASQUERADE
-```
-
-**持久化规则**（防止路由器重启丢失）：
-
-在 OpenWrt 管理界面 → 网络 → 防火墙 → 自定义规则 中添加以上命令。
+如果烟机和 EMQX 不在同一网段，才需要额外做 MQTT 路由或防火墙放行；正常同网段不需要 MQTT 劫持。
 
 ### 第五步：添加集成
 
@@ -149,26 +130,25 @@ iptables -t nat -A POSTROUTING -s <油烟机IP> -d <EMQX_IP> -p tcp --dport 1883
 
 | 字段 | 说明 | 示例值 |
 |------|------|--------|
-| **设备标识** | 32位 hex product ID | `a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4` |
-| **设备序列号** | 设备 serial | `1234567890` |
-| **MQTT Broker 局域网 IP** | HA Mosquitto 地址 | `192.168.166.68` |
-| **HTTP 伪装服务器端口** | Proxy 监听端口 | `80` |
-| **设备端 MQTT Broker** | EMQX 地址（留空=同上） | `192.168.166.50` |
-| **上游 API 域名** | 方太云 API 域名 | `api.fotile.com` |
-| **上游 API 真实 IP** | 绕过 DNS 回环 | `101.37.40.179` |
+| **MQTT Broker 局域网 IP** | EMQX 地址，通常会自动填 HA 主机 IP | `192.168.166.68` |
+| **MQTT Broker 端口** | EMQX MQTT 端口，默认自动填 `1883` | `1883` |
+| **本地最小云 HTTP 端口** | 本地最小云监听端口 | `80` |
 
-> **为什么需要"上游 API 真实 IP"？**
-> HA 自身的 DNS 可能会将 `api.fotile.com` 解析到本机（因为 DNS 劫持），导致代理回环。直接填真实 IP 可绕过此问题。
+提交后保持页面打开，断电重启烟机。页面会显示等待发现；抓到 `deviceId` 和 `productId` 后会自动创建配置项。
+
+> 烟机访问的是固定的 `api.fotile.com:80`。如果只做 DNS 劫持，本地最小云必须监听 HA 主机的 80 端口，并且 HA 服务器上的 80 端口不能被其他服务占用。只有额外配置 OpenWrt DNAT，把烟机访问的 80 转发到 HA 的其他端口时，才可以把这里改成其他端口。
 
 ### 第六步：验证
 
 重启油烟机（断电恢复），观察 HA 日志：
 
 ```
-✅ time_sync → 返回时间戳
-✅ new_device_login → 设备登录
-✅ routeService → MQTT IP 改写: 47.x.x.x → 192.168.166.50
-✅ sync 状态更新: {'PowerSwitchAll': 2, 'Light': 0, ...}
+Fotile 本地最小云已启动: 0.0.0.0:80
+本地云请求: POST /v5/time_sync/
+本地云请求: POST /v2/new_device_login
+本地云请求: POST /iot-mqttManager/routeService
+本地云请求: POST /v2/tsl/query/product
+sync 状态更新: {'PowerSwitchAll': 2, 'Light': 0, ...}
 ```
 
 ## 支持的实体
@@ -192,8 +172,8 @@ iptables -t nat -A POSTROUTING -s <油烟机IP> -d <EMQX_IP> -p tcp --dport 1883
 |-------|------|------|
 | `sync/{device_id}/{serial}` | 设备 → HA | 设备状态上报 |
 | `reply/{device_id}/{serial}` | 设备 → HA | 指令执行回复 |
-| `control/{device_id}/{serial}` | HA → 设备 | 控制指令下发 |
-| `service/{device_id}/{serial}` | HA → 设备 | 查询指令下发 |
+| `control/{device_id}/{serial}` | HA → 设备 | 控制指令和状态查询 |
+| `service/{device_id}/{serial}` | HA → 设备 | 设备订阅，当前集成不主动发布 |
 
 ## 网络拓扑示例
 
@@ -201,29 +181,23 @@ iptables -t nat -A POSTROUTING -s <油烟机IP> -d <EMQX_IP> -p tcp --dport 1883
                     ┌─────────────────────────────────────────────────┐
                     │                  OpenWrt 路由器                   │
                     │                                                 │
-                    │  iptables DNAT:                                  │
-                    │    油烟机:80  → HA:80     (HTTP proxy)           │
-                    │    油烟机:1883 → EMQX:1883 (MQTT, 可选)          │
+                    │  DNS 劫持:                                       │
+                    │    api.fotile.com → HA_IP                        │
                     └─────────────────────────────────────────────────┘
                               │              │              │
                ┌──────────────┤              │              ├──────────────┐
                │              │              │              │              │
         ┌──────┴──────┐ ┌─────┴─────┐ ┌─────┴─────┐ ┌─────┴─────┐       │
-        │  油烟机      │ │   HA      │ │   EMQX    │ │  其他设备   │       │
-        │ .166.200    │ │  .166.68  │ │  .166.50  │ │           │       │
+        │  油烟机      │ │        HAOS / HA Server        │ │  其他设备   │       │
+        │ .166.200    │ │        .166.68                  │ │           │       │
         │             │ │           │ │           │ │           │       │
-        │ WiFi 模块   │ │ Mosquitto │ │ 匿名MQTT  │ │           │       │
-        │             │ │ Proxy     │ │           │ │           │       │
-        │             │ │ 集成      │ │           │ │           │       │
-        └─────────────┘ └───────────┘ └───────────┘ └───────────┘       │
-                                           │                            │
-                                    Mosquitto Bridge                    │
-                                    (sync/reply ← EMQX)                │
-                                    (service/control → EMQX)            │
+        │ WiFi 模块   │ │  本地最小云 + EMQX add-on       │ │           │       │
+        │             │ │  HA MQTT 集成直接连接 EMQX      │ │           │       │
+        └─────────────┘ └─────────────────────────────────┘ └───────────┘       │
                                                                         │
                     ┌───────────────────────────────────────────────────┘
                     │  互联网
-                    │  api.fotile.com (101.37.40.179)
+                    │  HA 控制烟机不依赖官方 API
                     └──────────────────────────────────────
 ```
 
@@ -231,24 +205,20 @@ iptables -t nat -A POSTROUTING -s <油烟机IP> -d <EMQX_IP> -p tcp --dport 1883
 
 ### 油烟机未连接
 
-1. **检查 HTTP 劫持**：HA 日志中是否有 `代理请求: POST /v5/time_sync/`
-   - 没有 → 检查 iptables HTTP 规则
-2. **检查 MQTT 连接**：EMQX 管理后台是否有 `Fotile_DEV_*` 客户端
+1. **检查 DNS 劫持**：HA 日志中是否有 `本地云请求: POST /v5/time_sync/`
+   - 没有 → 检查 OpenWrt 中 `api.fotile.com -> HA_IP` 是否生效，并断电重启烟机
+2. **检查 MQTT 连接**：EMQX add-on 管理后台是否有 `Fotile_DEV_*` 客户端
    - 没有 → 检查 routeService 返回的 IP 是否正确
-3. **检查 Bridge**：Mosquitto 日志是否有 `Bridge connection emqx_fotile established`
-   - 没有 → 检查 `bridge_emqx.conf` 配置
+3. **检查 HA MQTT 集成**：Home Assistant 是否已经连接 EMQX
+   - 没有 → 在 MQTT 集成里把 Broker 改成 EMQX
 
 ### Mosquitto 认证问题
 
-油烟机连接 Mosquitto 时显示 `not authorised` → 油烟机不支持 MQTT 认证，必须通过 EMQX（匿名 Broker）中转。
+油烟机连接 Mosquitto 时显示 `not authorised` → 烟机无法满足 Mosquitto 的认证要求。建议改用 EMQX add-on 作为唯一 Broker；否则必须配置 EMQX 到 Mosquitto 的 Bridge。
 
-### DNS 回环
+### routeService 未出现
 
-代理日志显示 `Cannot connect to host api.fotile.com:443 ssl:False [Timeout while contacting DNS servers]` → 填写 **上游 API 真实 IP** 字段，绕过 DNS。
-
-### routeService 未被拦截
-
-油烟机只发 `time_sync` 不发 `routeService` → 代理原先未正确响应 `time_sync`，请更新到最新版本（透传模式）。
+油烟机只发 `time_sync` 不发 `routeService` → 重点看 `/v2/new_device_login` 是否返回成功；本地最小云必须按顺序响应 `time_sync`、`new_device_login`、`routeService`、`tsl/query/product`。
 
 ## 开发相关
 
@@ -261,7 +231,7 @@ custom_components/fotile/
 ├── const.py             # 常量定义
 ├── coordinator.py       # MQTT 通信协调器
 ├── entity.py            # 基础实体类
-├── proxy.py             # HTTP 透传代理（核心）
+├── proxy.py             # 本地最小云 HTTP 服务（核心）
 ├── fan.py               # 风机实体
 ├── light.py             # 照明实体
 ├── cover.py             # 升降面板实体
