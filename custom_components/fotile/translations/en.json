@@ -3,20 +3,36 @@
     "step": {
       "user": {
         "title": "Configure Fotile Range Hood",
-        "description": "Make sure OpenWrt resolves api.fotile.com to Home Assistant. After submitting, power-cycle the range hood and the integration will discover the device ID and serial number.",
+        "description": "Choose a setup method.",
+        "menu_options": {
+          "discover": "Auto-discover device info",
+          "manual": "Enter device info manually"
+        }
+      },
+      "discover": {
+        "title": "Auto-discover Device Info",
+        "description": "Turn off power to the range hood, wait 10 seconds, then power it on again. Keep this page open. After the local cloud captures the device info, submit this step and the form will be prefilled with the device identifier and serial number."
+      },
+      "manual": {
+        "title": "Configure Fotile Range Hood",
+        "description": "Confirm the device info and MQTT settings, then submit to create the config entry.",
         "data": {
           "mqtt_host": "MQTT Broker LAN IP (defaults to HA host IP)",
           "mqtt_port": "MQTT Broker Port",
-          "proxy_port": "Local Cloud HTTP Port"
+          "proxy_port": "Local Cloud HTTP Port",
+          "device_id": "Device identifier (productId, 32-char hex)",
+          "device_serial": "Device serial number (deviceId)"
         }
       }
     },
-    "progress": {
-      "discover_device": "Waiting for the range hood to request the local cloud. Power-cycle the range hood and keep this page open."
-    },
     "error": {
       "invalid_mqtt_host": "MQTT host cannot be empty",
-      "invalid_port": "Port must be between 1 and 65535"
+      "invalid_port": "Port must be between 1 and 65535",
+      "required_device_id": "Device identifier is required",
+      "required_device_serial": "Device serial number is required",
+      "discovery_not_ready": "Device info has not been captured yet. Power-cycle the range hood, then submit again.",
+      "cannot_start_discovery": "Unable to start the local cloud. Check whether the port is already in use.",
+      "discovery_timeout": "No range hood was discovered. Check DNS and DNAT, then start auto-discovery again."
     },
     "abort": {
       "already_configured": "This device is already configured",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
@@ -10,14 +11,6 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-class DoneTask:
-    def done(self) -> bool:
-        return True
-
-    def exception(self) -> None:
-        return None
 
 
 class FakeDiscoveryProxy:
@@ -34,7 +27,7 @@ class FakeDiscoveryProxy:
 
 class FakeHass:
     def async_create_task(self, coro):
-        return coro
+        return asyncio.create_task(coro)
 
 
 def load_config_flow_module():
@@ -63,14 +56,8 @@ def load_config_flow_module():
         def async_show_form(self, **kwargs: Any) -> dict[str, Any]:
             return {"type": "form", **kwargs}
 
-        def async_show_progress(self, **kwargs: Any) -> dict[str, Any]:
-            return {"type": "progress", **kwargs}
-
-        def async_show_progress_done(self, **kwargs: Any) -> dict[str, Any]:
-            return {"type": "progress_done", **kwargs}
-
-        def async_update_progress(self, progress: float) -> None:
-            self.progress = progress
+        def async_show_menu(self, **kwargs: Any) -> dict[str, Any]:
+            return {"type": "menu", **kwargs}
 
     config_entries_module = types.ModuleType("homeassistant.config_entries")
     config_entries_module.ConfigFlow = FakeConfigFlow
@@ -143,52 +130,72 @@ def schema_keys(schema) -> set[str]:
     return {key.schema for key in schema.schema}
 
 
-def test_initial_config_form_only_requires_network_settings() -> None:
+def schema_defaults(schema) -> dict[str, Any]:
+    return {key.schema: key.default for key in schema.schema}
+
+
+def test_initial_step_offers_auto_discovery_or_manual_entry() -> None:
     module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
 
-    keys = schema_keys(module._build_user_schema("192.168.166.68"))
+    result = asyncio.run(flow.async_step_user())
 
-    assert "device_id" not in keys
-    assert "device_serial" not in keys
-    assert keys == {
-        "mqtt_host",
-        "mqtt_port",
-        "proxy_port",
-    }
+    assert result["type"] == "menu"
+    assert result["menu_options"] == ["discover", "manual"]
 
 
-def test_user_form_defaults_mqtt_to_ha_lan_ip_and_emqx_port() -> None:
+def test_manual_config_form_includes_network_and_device_fields() -> None:
     module = load_config_flow_module()
     flow = module.FotileConfigFlow()
     flow.hass = FakeHass()
 
-    import asyncio
+    result = asyncio.run(flow.async_step_manual())
 
-    result = asyncio.run(flow.async_step_user())
+    keys = schema_keys(result["data_schema"])
+    assert result["type"] == "form"
+    assert result["step_id"] == "manual"
+    assert keys == {
+        "mqtt_host",
+        "mqtt_port",
+        "proxy_port",
+        "device_id",
+        "device_serial",
+    }
 
-    schema = result["data_schema"].schema
-    defaults = {key.schema: key.default for key in schema}
-    assert defaults["mqtt_host"] == "192.168.166.68"
-    assert defaults["mqtt_port"] == 1883
 
-
-def test_discovery_finish_creates_entry_with_captured_ids() -> None:
+def test_manual_form_defaults_to_ha_lan_ip_emqx_port_and_discovered_ids() -> None:
     module = load_config_flow_module()
     flow = module.FotileConfigFlow()
-    flow._base_data = {
-        "mqtt_host": "192.168.166.68",
-        "mqtt_port": 1883,
-        "proxy_port": 80,
-    }
+    flow.hass = FakeHass()
     flow._discovered = {
         "device_id": "9d956a565f4727625e2f43ab6e0814b7",
         "device_serial": "1147191980",
     }
-    flow._discovery_task = DoneTask()
 
-    import asyncio
+    result = asyncio.run(flow.async_step_manual())
 
-    result = asyncio.run(flow.async_step_finish())
+    defaults = schema_defaults(result["data_schema"])
+    assert defaults["mqtt_host"] == "192.168.166.68"
+    assert defaults["mqtt_port"] == 1883
+    assert defaults["device_id"] == "9d956a565f4727625e2f43ab6e0814b7"
+    assert defaults["device_serial"] == "1147191980"
+
+
+def test_manual_submit_creates_entry_with_device_ids() -> None:
+    module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
+
+    result = asyncio.run(
+        flow.async_step_manual(
+            {
+                "mqtt_host": "192.168.166.68",
+                "mqtt_port": 1883,
+                "proxy_port": 80,
+                "device_id": "9d956a565f4727625e2f43ab6e0814b7",
+                "device_serial": "1147191980",
+            }
+        )
+    )
 
     assert result["type"] == "create_entry"
     assert result["title"] == "Fotile 9d956a56..."
@@ -201,54 +208,56 @@ def test_discovery_finish_creates_entry_with_captured_ids() -> None:
     }
 
 
-def test_discovery_step_creates_entry_when_task_is_done() -> None:
+def test_manual_submit_uses_default_proxy_port_when_omitted() -> None:
     module = load_config_flow_module()
     flow = module.FotileConfigFlow()
-    flow._base_data = {
-        "mqtt_host": "192.168.166.68",
-        "mqtt_port": 1883,
-        "proxy_port": 80,
-    }
-    flow._discovered = {
-        "device_id": "9d956a565f4727625e2f43ab6e0814b7",
-        "device_serial": "1147191980",
-    }
-    flow._discovery_task = DoneTask()
 
-    import asyncio
-
-    result = asyncio.run(flow.async_step_discovery())
-
-    assert result["type"] == "create_entry"
-    assert result["data"]["device_id"] == "9d956a565f4727625e2f43ab6e0814b7"
-
-
-def test_successful_discovery_keeps_proxy_until_finish_step() -> None:
-    module = load_config_flow_module()
-    flow = module.FotileConfigFlow()
-    flow._base_data = {
-        "mqtt_host": "192.168.166.68",
-        "mqtt_port": 1883,
-        "proxy_port": 80,
-    }
-    proxy = FakeDiscoveryProxy()
-    module.FotileProxy = lambda **kwargs: proxy
-
-    async def run_discovery() -> None:
-        task = asyncio.create_task(flow._async_discover_device())
-        await asyncio.sleep(0)
-        flow._handle_device_info(
+    result = asyncio.run(
+        flow.async_step_manual(
             {
+                "mqtt_host": "192.168.166.68",
+                "mqtt_port": 1883,
                 "device_id": "9d956a565f4727625e2f43ab6e0814b7",
                 "device_serial": "1147191980",
             }
         )
-        await task
+    )
 
-    import asyncio
+    assert result["type"] == "create_entry"
+    assert result["data"]["proxy_port"] == 80
 
-    asyncio.run(run_discovery())
 
+def test_auto_discovery_step_starts_local_cloud_and_shows_power_cycle_prompt() -> None:
+    module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
+    flow.hass = FakeHass()
+    proxy = FakeDiscoveryProxy()
+    module.FotileProxy = lambda **kwargs: proxy
+
+    result = asyncio.run(flow.async_step_discover())
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "discover"
     assert proxy.started
     assert not proxy.stopped
-    assert flow._discovery_proxy is proxy
+
+
+def test_auto_discovery_success_returns_manual_form_with_captured_defaults() -> None:
+    module = load_config_flow_module()
+    flow = module.FotileConfigFlow()
+    flow.hass = FakeHass()
+    proxy = FakeDiscoveryProxy()
+    flow._discovery_proxy = proxy
+    flow._discovered = {
+        "device_id": "9d956a565f4727625e2f43ab6e0814b7",
+        "device_serial": "1147191980",
+    }
+
+    result = asyncio.run(flow.async_step_discover({}))
+
+    defaults = schema_defaults(result["data_schema"])
+    assert result["type"] == "form"
+    assert result["step_id"] == "manual"
+    assert proxy.stopped
+    assert defaults["device_id"] == "9d956a565f4727625e2f43ab6e0814b7"
+    assert defaults["device_serial"] == "1147191980"

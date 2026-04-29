@@ -3,20 +3,36 @@
     "step": {
       "user": {
         "title": "配置方太油烟机",
-        "description": "请先确认 OpenWrt 已将 api.fotile.com 固定解析到 Home Assistant。提交后断电重启烟机，集成会自动获取烟机身份信息。",
+        "description": "请选择配置方式。",
+        "menu_options": {
+          "discover": "自动获取设备信息",
+          "manual": "手动填写设备信息"
+        }
+      },
+      "discover": {
+        "title": "自动获取设备信息",
+        "description": "请先关闭油烟机电源，等待 10 秒后重新上电。保持此页面打开。本地云抓到设备信息后点击提交，系统会回到表单并自动填入设备标识和设备序列号。"
+      },
+      "manual": {
+        "title": "配置方太油烟机",
+        "description": "确认设备信息和 MQTT 设置，然后提交创建配置项。",
         "data": {
           "mqtt_host": "MQTT Broker 局域网 IP（默认 HA 主机 IP）",
           "mqtt_port": "MQTT Broker 端口",
-          "proxy_port": "本地最小云 HTTP 端口"
+          "proxy_port": "本地最小云 HTTP 端口",
+          "device_id": "设备标识（productId，32位hex）",
+          "device_serial": "设备序列号（deviceId）"
         }
       }
     },
-    "progress": {
-      "discover_device": "等待烟机请求本地云。请断电重启烟机，保持此页面打开。"
-    },
     "error": {
       "invalid_mqtt_host": "MQTT 地址不能为空",
-      "invalid_port": "端口号必须在 1-65535 之间"
+      "invalid_port": "端口号必须在 1-65535 之间",
+      "required_device_id": "设备标识不能为空",
+      "required_device_serial": "设备序列号不能为空",
+      "discovery_not_ready": "还没有抓到设备信息，请确认已断电重启烟机后再提交",
+      "cannot_start_discovery": "无法启动本地最小云，请检查端口是否被占用",
+      "discovery_timeout": "未发现烟机，请检查 DNS 和 DNAT 后重新进入自动获取"
     },
     "abort": {
       "already_configured": "该设备已配置",
